@@ -1,38 +1,36 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving    #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE OverloadedLabels      #-}
-{-# LANGUAGE OverloadedLists       #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeInType            #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE
+    DataKinds
+  , StandaloneDeriving
+  , GeneralizedNewtypeDeriving
+  , DeriveGeneric
+  , DuplicateRecordFields
+  , FlexibleContexts
+  , OverloadedLabels
+  , OverloadedLists
+  , OverloadedStrings
+  , ScopedTypeVariables
+  , TypeApplications
+  , TypeFamilies
+  , TypeInType
+  , TypeOperators
+#-}
+
 module ExceptionHandling
   ( specs
   , User (..)
-  )
-where
+  ) where
 
-import           Control.Monad               (void)
+import Control.Monad(void)
 import Control.Monad.IO.Class (MonadIO (..))
-import qualified Data.ByteString.Char8       as Char8
-import           Data.Int                    (Int16)
-import           Data.Text                   (Text)
-import           Data.Vector                 (Vector, fromList)
-import qualified Generics.SOP                as SOP
-import qualified GHC.Generics                as GHC
-import           Squeal.PostgreSQL
-import           Squeal.PostgreSQL.Migration
-import           Test.Hspec
-import           Test.QuickCheck
-import Generic.Random(withBaseCase, (%), genericArbitraryRec)
-import Generic.Random (listOf1', genericArbitrary, uniform)
-import Test.QuickCheck.Instances.Text()
+import qualified Data.ByteString.Char8 as Char8
+import Data.Int (Int16)
+import Data.Text (Text)
+import Data.Vector (Vector)
+import qualified Generics.SOP as SOP
+import qualified GHC.Generics as GHC
+import Squeal.PostgreSQL
+import Squeal.PostgreSQL.Migration
+import Test.Hspec
 
 type Schema =
   '[ "users" ::: 'Table (
@@ -62,16 +60,6 @@ data User =
   deriving (Show, GHC.Generic, Eq)
 instance SOP.Generic User
 instance SOP.HasDatatypeInfo User
-
-instance Arbitrary User where
-  arbitrary = genericArbitrary uniform
-
-instance Arbitrary a => Arbitrary (Vector a) where
-  arbitrary = fromList <$> arbitrary
-
-
-deriving instance Arbitrary a => Arbitrary (VarArray a)
-
 
 setup :: Definition (Public '[]) Schemas
 setup =
@@ -109,12 +97,13 @@ dropDB = void . withConnection connectionString $
   & pqThen (migrateDown (single migration))
 
 connectionString :: Char8.ByteString
--- connectionString = "host=localhost port=5432 dbname=exampledb"
--- connectionString = "host=localhost port=5432 dbname=exampledb"
 connectionString = "postgres:///exampledb"
 
 testUser :: User
 testUser = User "TestUser" Nothing (VarArray [])
+
+badTestUser :: User
+badTestUser = User "TestUser\NUL1" Nothing (VarArray [])
 
 newUser :: (MonadIO m, MonadPQ Schemas m) => User -> m ()
 newUser u = void $ manipulateParams insertUser u
@@ -130,17 +119,6 @@ insertUser = with (u `as` #u) e
         (Default `as` #id :* Set (#u ! #id) `as` #user_id :* Set (#u ! #email) `as` #email)
         (from (common #u))
 
-insertUser' :: Manipulation '[] Schemas '[ 'NotNull 'PGtext, 'NotNull ('PGvararray ('Null 'PGint2))]
-  '[ "fromOnly" ::: 'NotNull 'PGint4 ]
-insertUser' = insertInto #users
-  (Values_ (Default `as` #id :* Set (param @1) `as` #name :* Set (param @2) `as` #vec))
-  OnConflictDoRaise (Returning (#id `as` #fromOnly))
-
-
-insertUserTwice :: (MonadIO m, MonadPQ Schemas m) => m ()
-insertUserTwice = newUser testUser >> newUser testUser
-
-
 getUsers :: Query_ Schemas () User
 getUsers = select_
     (#u ! #name `as`  #userName :*
@@ -149,7 +127,6 @@ getUsers = select_
     ( from (table (#users `as` #u)
          & innerJoin (table (#emails `as` #e ) )
            (#u ! #id .== #e ! #user_id   )))
-
 
 specs :: SpecWith ()
 specs = before_ setupDB $ after_ dropDB $
@@ -167,8 +144,8 @@ specs = before_ setupDB $ after_ dropDB $
       withConnection connectionString (transactionally_ insertUserTwice)
        `shouldThrow` (== dupKeyErr)
 
-    it "should be able to insert and then read a user" $ property $ \(user :: User) -> do
-      (fetchedUsers :: [User]) <- withConnection connectionString $ do
-        newUser user
-        & pqThen (getRows =<< runQuery  getUsers)
-      fetchedUsers `shouldBe` [user]
+    it "should be able to insert and then read a user" $ do
+      fetchedUsers <- withConnection connectionString $ do
+        newUser badTestUser
+        getRows =<< runQuery getUsers
+      fetchedUsers `shouldBe` [badTestUser]
