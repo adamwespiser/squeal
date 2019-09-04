@@ -41,6 +41,7 @@ module Squeal.PostgreSQL.Definition
   , createTable
   , createTableIfNotExists
   , createView
+  , createOrReplaceView
   , createTypeEnum
   , createTypeEnumFrom
   , createTypeComposite
@@ -70,6 +71,7 @@ module Squeal.PostgreSQL.Definition
     -- ** Drop
   , dropSchema
   , dropTable
+  , dropTableIfExists
   , dropView
   , dropType
   , dropIndex
@@ -182,9 +184,9 @@ createSchema sch = UnsafeDefinition $
 
 {- | Idempotent version of `createSchema`. -}
 createSchemaIfNotExists
-  :: (KnownSymbol sch, Has sch schemas schema)
+  :: KnownSymbol sch
   => Alias sch
-  -> Definition schemas schemas
+  -> Definition schemas (CreateIfNotExists sch schema schemas)
 createSchemaIfNotExists sch = UnsafeDefinition $
   "CREATE" <+> "SCHEMA" <+> "IF" <+> "NOT" <+> "EXISTS"
   <+> renderSQL sch <> ";"
@@ -249,7 +251,8 @@ CREATE TABLE IF NOT EXISTS "tab" ("a" int NULL, "b" real NULL);
 -}
 createTableIfNotExists
   :: ( Has sch schemas schema
-     , Has tab schema ('Table (constraints :=> columns))
+     , KnownSymbol tab
+     , table ~ 'Table (constraints :=> columns)
      , SOP.SListI columns
      , SOP.SListI constraints )
   => QualifiedAlias sch tab -- ^ the name of the table to add
@@ -257,7 +260,7 @@ createTableIfNotExists
     -- ^ the names and datatype of each column
   -> NP (Aliased (TableConstraintExpression sch tab schemas)) constraints
     -- ^ constraints that must hold for the table
-  -> Definition schemas schemas
+  -> Definition schemas (Alter sch (CreateIfNotExists tab table schema) schemas)
 createTableIfNotExists tab columns constraints = UnsafeDefinition $
   "CREATE TABLE IF NOT EXISTS"
   <+> renderCreation tab columns constraints
@@ -608,7 +611,16 @@ dropTable
      , Has tab schema ('Table table))
   => QualifiedAlias sch tab -- ^ table to remove
   -> Definition schemas (Alter sch (Drop tab schema) schemas)
-dropTable tab = UnsafeDefinition $ "DROP TABLE" <+> renderSQL tab <> ";"
+dropTable tab = UnsafeDefinition $
+  "DROP TABLE IF EXISTS" <+> renderSQL tab <> ";"
+
+dropTableIfExists
+  :: ( Has sch schemas schema
+     , Has tab schema ('Table table))
+  => QualifiedAlias sch tab -- ^ table to remove
+  -> Definition schemas (Alter sch (DropIfExists tab schema) schemas)
+dropTableIfExists tab = UnsafeDefinition $
+  "DROP TABLE IF EXISTS" <+> renderSQL tab <> ";"
 
 {-----------------------------------------
 ALTER statements
@@ -913,6 +925,15 @@ createView alias query = UnsafeDefinition $
   "CREATE" <+> "VIEW" <+> renderSQL alias <+> "AS"
   <+> renderQuery query <> ";"
 
+createOrReplaceView
+  :: (KnownSymbol sch, KnownSymbol vw, Has sch schemas schema)
+  => QualifiedAlias sch vw -- ^ the name of the view to add
+  -> Query '[] '[] schemas '[] view -- ^ query
+  -> Definition schemas (Alter sch (CreateOrReplace vw ('View view) schema) schemas)
+createOrReplaceView alias query = UnsafeDefinition $
+  "CREATE OR REPLACE" <+> "VIEW" <+> renderSQL alias <+> "AS"
+  <+> renderQuery query <> ";"
+
 -- | Drop a view.
 --
 -- >>> :{
@@ -1160,7 +1181,7 @@ createOrReplaceFunction
   -> NP (TypeExpression schemas) args
   -> TypeExpression schemas ret
   -> FunctionDefinition schemas args ('Returns ret)
-  -> Definition schemas (Alter sch (Alter fun ('Function args ('Returns ret)) schema) schemas)
+  -> Definition schemas (Alter sch (CreateOrReplace fun ('Function args ('Returns ret)) schema) schemas)
 createOrReplaceFunction fun args ret fundef = UnsafeDefinition $
   "CREATE" <+> "OR" <+> "REPLACE" <+> "FUNCTION" <+> renderSQL fun
     <+> parenthesized (renderCommaSeparated renderSQL args)
@@ -1208,7 +1229,7 @@ createOrReplaceSetFunction
   -> NP (TypeExpression schemas) args
   -> NP (Aliased (TypeExpression schemas)) rets
   -> FunctionDefinition schemas args ('ReturnsTable rets)
-  -> Definition schemas (Alter sch (Alter fun ('Function args ('ReturnsTable rets)) schema) schemas)
+  -> Definition schemas (Alter sch (CreateOrReplace fun ('Function args ('ReturnsTable rets)) schema) schemas)
 createOrReplaceSetFunction fun args rets fundef = UnsafeDefinition $
   "CREATE" <+> "OR" <+> "REPLACE" <+> "FUNCTION" <+> renderSQL fun
     <+> parenthesized (renderCommaSeparated renderSQL args)
