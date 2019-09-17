@@ -325,7 +325,7 @@ type family Create alias x xs where
   Create alias x (alias ::: y ': xs) = TypeError
     ('Text "Create: alias "
     ':<>: 'ShowType alias
-    ':<>: 'Text "already in use")
+    ':<>: 'Text "already exists")
   Create alias y (x ': xs) = x ': Create alias y xs
 
 type family CreateOrReplace alias x xs where

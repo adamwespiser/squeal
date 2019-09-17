@@ -70,11 +70,13 @@ module Squeal.PostgreSQL.Definition
   , languageSqlQuery
     -- ** Drop
   , dropSchema
+  , dropSchemaIfExists
   , dropTable
   , dropTableIfExists
   , dropView
   , dropType
   , dropIndex
+  , dropIndexIfExists
   , dropFunction
   , dropOperator
     -- ** Alter
@@ -596,6 +598,14 @@ dropSchema
   -> Definition schemas (Drop sch schemas)
 dropSchema sch = UnsafeDefinition $ "DROP SCHEMA" <+> renderSQL sch <> ";"
 
+dropSchemaIfExists
+  :: Has sch schemas schema
+  => Alias sch
+  -- ^ user defined schema
+  -> Definition schemas (Drop sch schemas)
+dropSchemaIfExists sch = UnsafeDefinition $
+  "DROP SCHEMA IF EXISTS" <+> renderSQL sch <> ";"
+
 -- | `dropTable` removes a table from the schema.
 --
 -- >>> :{
@@ -951,6 +961,13 @@ dropView
   => QualifiedAlias sch vw -- ^ view to remove
   -> Definition schemas (Alter sch (Drop vw schema) schemas)
 dropView vw = UnsafeDefinition $ "DROP VIEW" <+> renderSQL vw <> ";"
+
+dropViewIfExists
+  :: (Has sch schemas schema, Has vw schema ('View view))
+  => QualifiedAlias sch vw -- ^ view to remove
+  -> Definition schemas (Alter sch (Drop vw schema) schemas)
+dropViewIfExists vw = UnsafeDefinition $
+  "DROP VIEW IF EXISTS" <+> renderSQL vw <> ";"
 
 -- | Enumerated types are created using the `createTypeEnum` command, for example
 --
@@ -1324,6 +1341,14 @@ dropIndex
   -- ^ name of the user defined index
   -> Definition schemas (Alter sch (Drop ix schema) schemas)
 dropIndex ix = UnsafeDefinition $ "DROP" <+> "INDEX" <+> renderSQL ix <> ";"
+
+dropIndexIfExists
+  :: (Has sch schemas schema, Has ix schema 'Index)
+  => QualifiedAlias sch ix
+  -- ^ name of the user defined index
+  -> Definition schemas (Alter sch (DropIfExists ix schema) schemas)
+dropIndexIfExists ix = UnsafeDefinition $
+  "DROP INDEX IF EXISTS" <+> renderSQL ix <> ";"
 
 -- | Lift `PGTyped` to a field
 class FieldTyped schemas ty where
