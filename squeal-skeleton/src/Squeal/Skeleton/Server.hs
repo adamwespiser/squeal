@@ -1,0 +1,1 @@
+module Squeal.Skeleton.Server where

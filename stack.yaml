@@ -1,6 +1,7 @@
 resolver: nightly-2019-07-14
 packages:
 - squeal-postgresql
+- squeal-skeleton
 
 extra-deps:
 - unliftio-pool-0.2.1.0
