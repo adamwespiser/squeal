@@ -410,7 +410,7 @@ instance (MonadIO io, schemas0 ~ schemas, schemas1 ~ schemas)
       PQ $ \ (K conn) -> do
         let
           toParam' encoding =
-            (LibPQ.invalidOid, encodingBytes encoding, LibPQ.Binary)
+            (LibPQ.Oid 23, encodingBytes encoding, LibPQ.Binary)
           params' = fmap (fmap toParam') (hcollapse (toParams @x @ps params))
           q' = q <> ";"
         resultMaybe <- liftIO $ LibPQ.execParams conn q' params' LibPQ.Binary
@@ -425,7 +425,7 @@ instance (MonadIO io, schemas0 ~ schemas, schemas1 ~ schemas)
     (UnsafeManipulation q :: Manipulation '[] schemas xs ys) (list :: list x) =
       PQ $ \ (K conn) -> liftIO $ do
         let temp = "temporary_statement"
-        prepResultMaybe <- LibPQ.prepare conn temp q Nothing
+        prepResultMaybe <- LibPQ.prepare conn temp q Nothing -- fixme
         case prepResultMaybe of
           Nothing -> throw $ ResultException
             "traversePrepared: LibPQ.prepare returned no results"
@@ -452,7 +452,7 @@ instance (MonadIO io, schemas0 ~ schemas, schemas1 ~ schemas)
     (UnsafeManipulation q :: Manipulation '[] schemas xs '[]) (list :: list x) =
       PQ $ \ (K conn) -> liftIO $ do
         let temp = "temporary_statement"
-        prepResultMaybe <- LibPQ.prepare conn temp q Nothing
+        prepResultMaybe <- LibPQ.prepare conn temp q Nothing -- fixme
         case prepResultMaybe of
           Nothing -> throw $ ResultException
             "traversePrepared_: LibPQ.prepare returned no results"

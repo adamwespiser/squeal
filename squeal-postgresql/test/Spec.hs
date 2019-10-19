@@ -8,6 +8,7 @@
   , OverloadedLabels
   , OverloadedLists
   , OverloadedStrings
+  , ScopedTypeVariables
   , TypeApplications
   , TypeFamilies
   , TypeInType
@@ -92,6 +93,22 @@ spec = before_ setupDB . after_ dropDB $ do
     it "should be rethrown for constraint violation in a transaction" $
       withConnection connectionString (transactionally_ insertUserTwice)
        `shouldThrow` (== err23505)
+
+    it "should behave well on queries with parameters" $ do
+      (y1,y2) <- withConnection connectionString . transactionally_ $ do
+        let
+          q1 :: Query_ Schemas (Only Int32) (Only Int32)
+          q1 = values_ (param @1 `as` #fromOnly)
+          q2 :: Query_ Schemas (Int32, Int32) (Only Int32)
+          q2 = values_ (param @1 `as` #fromOnly)
+        x1 :: Maybe (Only Int32) <- firstRow
+          =<< runQueryParams q1 (Only (3::Int32))
+        x2 :: Maybe (Only Int32) <- firstRow
+          =<< runQueryParams q2 ((4::Int32), (5::Int32))
+        return (x1,x2)
+
+      y1 `shouldBe` Just (Only 3)
+      y2 `shouldBe` Just (Only 4)
 
   describe "Pools" $
 
