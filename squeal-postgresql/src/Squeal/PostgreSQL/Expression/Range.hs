@@ -126,7 +126,7 @@ data Range x = Empty | NonEmpty (Bound x) (Bound x)
   deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
 -- | `PGrange` @(@`PG` @hask)@
 type instance PG (Range hask) = 'PGrange (PG hask)
-instance ToParam x pg => ToParam (Range x) ('PGrange pg) where
+instance ToParam db x pg => ToParam db (Range x) ('PGrange pg) where
   toParam rng = SOP.K $
     word8 (setFlags rng 0) <>
       case rng of
@@ -135,8 +135,8 @@ instance ToParam x pg => ToParam (Range x) ('PGrange pg) where
     where
       putBound = \case
         Infinite -> mempty
-        Closed value -> putValue (SOP.unK (toParam @x @pg value))
-        Open value -> putValue (SOP.unK (toParam @x @pg value))
+        Closed value -> putValue (SOP.unK (toParam @db @x @pg value))
+        Open value -> putValue (SOP.unK (toParam @db @x @pg value))
       putValue value = int32BE (fromIntegral (builderLength value)) <> value
       setFlags = \case
         Empty -> (`setBit` 0)

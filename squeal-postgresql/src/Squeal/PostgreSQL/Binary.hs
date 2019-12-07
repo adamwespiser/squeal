@@ -259,7 +259,7 @@ import Squeal.PostgreSQL.Schema
 
 -- | A `ToParam` constraint gives an encoding of a Haskell `Type` into
 -- into the binary format of a PostgreSQL `PGType`.
-class ToParam (x :: Type) (pg :: PGType) where
+class ToParam (db :: SchemasType) (x :: Type) (pg :: PGType) where
   -- | >>> :set -XTypeApplications -XDataKinds
   -- >>> toParam @Bool @'PGbool False
   -- K "\NUL"
@@ -276,69 +276,69 @@ class ToParam (x :: Type) (pg :: PGType) where
   -- >>> toParam @Id @'PGint2 (Id 1)
   -- K "\NUL\SOH"
   toParam :: x -> K Encoding.Encoding pg
-instance ToParam Bool 'PGbool where toParam = K . Encoding.bool
-instance ToParam Int16 'PGint2 where toParam = K . Encoding.int2_int16
-instance ToParam Int32 'PGint4 where toParam = K . Encoding.int4_int32
-instance ToParam Int64 'PGint8 where toParam = K . Encoding.int8_int64
-instance ToParam Oid 'PGoid where toParam = K . Encoding.int4_word32 . getOid
-instance ToParam Float 'PGfloat4 where toParam = K . Encoding.float4
-instance ToParam Double 'PGfloat8 where toParam = K . Encoding.float8
-instance ToParam Scientific 'PGnumeric where toParam = K . Encoding.numeric
-instance ToParam Money 'PGmoney where toParam = K . Encoding.int8_int64 . cents
-instance ToParam UUID 'PGuuid where toParam = K . Encoding.uuid
-instance ToParam (NetAddr IP) 'PGinet where toParam = K . Encoding.inet
-instance ToParam Char ('PGchar 1) where toParam = K . Encoding.char_utf8
-instance ToParam Strict.Text 'PGtext where toParam = K . Encoding.text_strict
-instance ToParam Lazy.Text 'PGtext where toParam = K . Encoding.text_lazy
-instance ToParam String 'PGtext where
+instance ToParam db Bool 'PGbool where toParam = K . Encoding.bool
+instance ToParam db Int16 'PGint2 where toParam = K . Encoding.int2_int16
+instance ToParam db Int32 'PGint4 where toParam = K . Encoding.int4_int32
+instance ToParam db Int64 'PGint8 where toParam = K . Encoding.int8_int64
+instance ToParam db Oid 'PGoid where toParam = K . Encoding.int4_word32 . getOid
+instance ToParam db Float 'PGfloat4 where toParam = K . Encoding.float4
+instance ToParam db Double 'PGfloat8 where toParam = K . Encoding.float8
+instance ToParam db Scientific 'PGnumeric where toParam = K . Encoding.numeric
+instance ToParam db Money 'PGmoney where toParam = K . Encoding.int8_int64 . cents
+instance ToParam db UUID 'PGuuid where toParam = K . Encoding.uuid
+instance ToParam db (NetAddr IP) 'PGinet where toParam = K . Encoding.inet
+instance ToParam db Char ('PGchar 1) where toParam = K . Encoding.char_utf8
+instance ToParam db Strict.Text 'PGtext where toParam = K . Encoding.text_strict
+instance ToParam db Lazy.Text 'PGtext where toParam = K . Encoding.text_lazy
+instance ToParam db String 'PGtext where
   toParam = K . Encoding.text_strict . Strict.Text.pack
-instance ToParam Strict.ByteString 'PGbytea where
+instance ToParam db Strict.ByteString 'PGbytea where
   toParam = K . Encoding.bytea_strict
-instance ToParam Lazy.ByteString 'PGbytea where
+instance ToParam db Lazy.ByteString 'PGbytea where
   toParam = K . Encoding.bytea_lazy
-instance ToParam Day 'PGdate where toParam = K . Encoding.date
-instance ToParam TimeOfDay 'PGtime where toParam = K . Encoding.time_int
-instance ToParam (TimeOfDay, TimeZone) 'PGtimetz where
+instance ToParam db Day 'PGdate where toParam = K . Encoding.date
+instance ToParam db TimeOfDay 'PGtime where toParam = K . Encoding.time_int
+instance ToParam db (TimeOfDay, TimeZone) 'PGtimetz where
   toParam = K . Encoding.timetz_int
-instance ToParam LocalTime 'PGtimestamp where
+instance ToParam db LocalTime 'PGtimestamp where
   toParam = K . Encoding.timestamp_int
-instance ToParam UTCTime 'PGtimestamptz where
+instance ToParam db UTCTime 'PGtimestamptz where
   toParam = K . Encoding.timestamptz_int
-instance ToParam DiffTime 'PGinterval where toParam = K . Encoding.interval_int
-instance ToParam Aeson.Value 'PGjson where toParam = K . Encoding.json_ast
-instance ToParam Aeson.Value 'PGjsonb where toParam = K . Encoding.jsonb_ast
-instance Aeson.ToJSON x => ToParam (Json x) 'PGjson where
+instance ToParam db DiffTime 'PGinterval where toParam = K . Encoding.interval_int
+instance ToParam db Aeson.Value 'PGjson where toParam = K . Encoding.json_ast
+instance ToParam db Aeson.Value 'PGjsonb where toParam = K . Encoding.jsonb_ast
+instance Aeson.ToJSON x => ToParam db (Json x) 'PGjson where
   toParam = K . Encoding.json_bytes
     . Lazy.ByteString.toStrict . Aeson.encode . getJson
-instance Aeson.ToJSON x => ToParam (Jsonb x) 'PGjsonb where
+instance Aeson.ToJSON x => ToParam db (Jsonb x) 'PGjsonb where
   toParam = K . Encoding.jsonb_bytes
     . Lazy.ByteString.toStrict . Aeson.encode . getJsonb
-instance (ToNullityParam x ty, ty ~ nullity pg, OidOf pg)
-  => ToParam (VarArray [x]) ('PGvararray ty) where
+instance (ToNullityParam db x ty, ty ~ nullity pg, OidOf db pg)
+  => ToParam db (VarArray [x]) ('PGvararray ty) where
     toParam = K
       . Encoding.array_foldable
-        (getOid (oidOf @pg)) (unK . toNullityParam @x @ty)
+        (getOid (oidOf @db @pg)) (unK . toNullityParam @db @x @ty)
       . getVarArray
-instance (ToParam x pg, OidOf pg)
-  => ToParam (VarArray (Vector x)) ('PGvararray ('NotNull pg)) where
+instance (ToParam db x pg, OidOf db pg)
+  => ToParam db (VarArray (Vector x)) ('PGvararray ('NotNull pg)) where
     toParam = K
-      . Encoding.array_vector (getOid (oidOf @pg)) (unK . toParam @x @pg)
+      . Encoding.array_vector (getOid (oidOf @db @pg)) (unK . toParam @db @x @pg)
       . getVarArray
-instance (ToParam x pg, OidOf pg)
-  => ToParam (VarArray (Vector (Maybe x))) ('PGvararray ('Null pg)) where
+instance (ToParam db x pg, OidOf db pg)
+  => ToParam db (VarArray (Vector (Maybe x))) ('PGvararray ('Null pg)) where
     toParam = K
       . Encoding.nullableArray_vector
-        (getOid (oidOf @pg)) (unK . toParam @x @pg)
+        (getOid (oidOf @db @pg)) (unK . toParam @db @x @pg)
       . getVarArray
-instance (ToFixArray x dims ty, ty ~ nullity pg, OidOf pg)
-  => ToParam (FixArray x) ('PGfixarray dims ty) where
-    toParam = K . Encoding.array (getOid (oidOf @pg))
-      . unK . unK . toFixArray @x @dims @ty . getFixArray
+instance (ToFixArray db x dims ty, ty ~ nullity pg, OidOf db pg)
+  => ToParam db (FixArray x) ('PGfixarray dims ty) where
+    toParam = K . Encoding.array (getOid (oidOf @db @pg))
+      . unK . unK . toFixArray @db @x @dims @ty . getFixArray
 instance
   ( IsEnumType x
   , HasDatatypeInfo x
   , LabelsPG x ~ labels
-  ) => ToParam (Enumerated x) ('PGenum labels) where
+  ) => ToParam db (Enumerated x) ('PGenum labels) where
     toParam =
       let
         gshowConstructor :: NP ConstructorInfo xss -> SOP I xss -> String
@@ -356,16 +356,16 @@ instance
 instance
   ( SListI fields
   , IsRecord x xs
-  , AllZip ToField xs fields
-  , All OidOfField fields
-  ) => ToParam (Composite x) ('PGcomposite fields) where
+  , AllZip (ToField db) xs fields
+  , All (OidOfField db) fields
+  ) => ToParam db (Composite x) ('PGcomposite fields) where
     toParam =
       let
 
-        encoders = htrans (Proxy @ToField) toField
+        encoders = htrans (Proxy @(ToField db)) (toField @db)
 
         composite
-          :: All OidOfField row
+          :: All (OidOfField db) row
           => NP (K (Maybe Encoding.Encoding)) row
           -> K Encoding.Encoding ('PGcomposite row)
         composite fields = K $
@@ -382,18 +382,18 @@ instance
           int32BE (fromIntegral (lengthSList (Proxy @xs))) <>
             let
               each
-                :: OidOfField field
+                :: OidOfField db field
                 => K (Maybe Encoding.Encoding) field
                 -> Encoding.Encoding
               each (K field :: K (Maybe Encoding.Encoding) field) =
-                word32BE (getOid (oidOfField @field))
+                word32BE (getOid (oidOfField @db @field))
                 <> case field of
                   Nothing -> int64BE (-1)
                   Just value ->
                     int32BE (fromIntegral (builderLength value))
                     <> value
             in
-              hcfoldMap (Proxy @OidOfField) each fields
+              hcfoldMap (Proxy @(OidOfField db)) each fields
 
       in
         composite . encoders . toRecord . getComposite
@@ -403,163 +403,134 @@ instance
 -- >>> :set -XTypeApplications
 -- >>> oidOf @'PGbool
 -- Oid 16
-class OidOf (ty :: PGType) where oidOf :: LibPQ.Oid
-instance OidOf 'PGbool where oidOf = LibPQ.Oid 16
-instance OidOf ('PGfixarray ns (null 'PGbool)) where oidOf = LibPQ.Oid 1000
-instance OidOf ('PGvararray (null 'PGbool)) where oidOf = LibPQ.Oid 1000
-instance OidOf 'PGint2 where oidOf = LibPQ.Oid 21
-instance OidOf ('PGfixarray ns (null 'PGint2)) where oidOf = LibPQ.Oid 1005
-instance OidOf ('PGvararray (null 'PGint2)) where oidOf = LibPQ.Oid 1005
-instance OidOf 'PGint4 where oidOf = LibPQ.Oid 23
-instance OidOf ('PGfixarray ns (null 'PGint4)) where oidOf = LibPQ.Oid 1007
-instance OidOf ('PGvararray (null 'PGint4)) where oidOf = LibPQ.Oid 1007
-instance OidOf 'PGint8 where oidOf = LibPQ.Oid 20
-instance OidOf ('PGfixarray ns (null 'PGint8)) where oidOf = LibPQ.Oid 1016
-instance OidOf ('PGvararray (null 'PGint8)) where oidOf = LibPQ.Oid 1016
-instance OidOf 'PGnumeric where oidOf = LibPQ.Oid 1700
-instance OidOf ('PGfixarray ns (null 'PGnumeric)) where oidOf = LibPQ.Oid 1231
-instance OidOf ('PGvararray (null 'PGnumeric)) where oidOf = LibPQ.Oid 1231
-instance OidOf 'PGfloat4 where oidOf = LibPQ.Oid 700
-instance OidOf ('PGfixarray ns (null 'PGfloat4)) where oidOf = LibPQ.Oid 1021
-instance OidOf ('PGvararray (null 'PGfloat4)) where oidOf = LibPQ.Oid 1021
-instance OidOf 'PGfloat8 where oidOf = LibPQ.Oid 701
-instance OidOf ('PGfixarray ns (null 'PGfloat8)) where oidOf = LibPQ.Oid 1022
-instance OidOf ('PGvararray (null 'PGfloat8)) where oidOf = LibPQ.Oid 1022
-instance OidOf 'PGmoney where oidOf = LibPQ.Oid 790
-instance OidOf ('PGfixarray ns (null 'PGmoney)) where oidOf = LibPQ.Oid 791
-instance OidOf ('PGvararray (null 'PGmoney)) where oidOf = LibPQ.Oid 791
-instance OidOf ('PGchar n) where oidOf = LibPQ.Oid 18
-instance OidOf ('PGfixarray ns (null ('PGchar n))) where oidOf = LibPQ.Oid 1002
-instance OidOf ('PGvararray (null ('PGchar n))) where oidOf = LibPQ.Oid 1002
-instance OidOf ('PGvarchar n) where oidOf = LibPQ.Oid 1043
-instance OidOf ('PGfixarray ns (null ('PGvarchar n))) where oidOf = LibPQ.Oid 1015
-instance OidOf ('PGvararray (null ('PGvarchar n))) where oidOf = LibPQ.Oid 1015
-instance OidOf 'PGtext where oidOf = LibPQ.Oid 25
-instance OidOf ('PGfixarray ns (null 'PGtext)) where oidOf = LibPQ.Oid 1009
-instance OidOf ('PGvararray (null 'PGtext)) where oidOf = LibPQ.Oid 1009
-instance OidOf 'PGbytea where oidOf = LibPQ.Oid 17
-instance OidOf ('PGfixarray ns (null 'PGbytea)) where oidOf = LibPQ.Oid 1001
-instance OidOf ('PGvararray (null 'PGbytea)) where oidOf = LibPQ.Oid 1001
-instance OidOf 'PGtimestamp where oidOf = LibPQ.Oid 1114
-instance OidOf ('PGfixarray ns (null 'PGtimestamp)) where oidOf = LibPQ.Oid 1115
-instance OidOf ('PGvararray (null 'PGtimestamp)) where oidOf = LibPQ.Oid 1115
-instance OidOf 'PGtimestamptz where oidOf = LibPQ.Oid 1184
-instance OidOf ('PGfixarray ns (null 'PGtimestamptz)) where oidOf = LibPQ.Oid 1185
-instance OidOf ('PGvararray (null 'PGtimestamptz)) where oidOf = LibPQ.Oid 1185
-instance OidOf 'PGdate where oidOf = LibPQ.Oid 1082
-instance OidOf ('PGfixarray ns (null 'PGdate)) where oidOf = LibPQ.Oid 1182
-instance OidOf ('PGvararray (null 'PGdate)) where oidOf = LibPQ.Oid 1182
-instance OidOf 'PGtime where oidOf = LibPQ.Oid 1083
-instance OidOf ('PGfixarray ns (null 'PGtime)) where oidOf = LibPQ.Oid 1183
-instance OidOf ('PGvararray (null 'PGtime)) where oidOf = LibPQ.Oid 1183
-instance OidOf 'PGtimetz where oidOf = LibPQ.Oid 1266
-instance OidOf ('PGfixarray ns (null 'PGtimetz)) where oidOf = LibPQ.Oid 1270
-instance OidOf ('PGvararray (null 'PGtimetz)) where oidOf = LibPQ.Oid 1270
-instance OidOf 'PGinterval where oidOf = LibPQ.Oid 1186
-instance OidOf ('PGfixarray ns (null 'PGinterval)) where oidOf = LibPQ.Oid 1187
-instance OidOf ('PGvararray (null 'PGinterval)) where oidOf = LibPQ.Oid 1187
-instance OidOf 'PGuuid where oidOf = LibPQ.Oid 2950
-instance OidOf ('PGfixarray ns (null 'PGuuid)) where oidOf = LibPQ.Oid 2951
-instance OidOf ('PGvararray (null 'PGuuid)) where oidOf = LibPQ.Oid 2951
-instance OidOf 'PGinet where oidOf = LibPQ.Oid 869
-instance OidOf ('PGfixarray ns (null 'PGinet)) where oidOf = LibPQ.Oid 1041
-instance OidOf ('PGvararray (null 'PGinet)) where oidOf = LibPQ.Oid 1041
-instance OidOf 'PGjson where oidOf = LibPQ.Oid 114
-instance OidOf ('PGfixarray ns (null 'PGjson)) where oidOf = LibPQ.Oid 199
-instance OidOf ('PGvararray (null 'PGjson)) where oidOf = LibPQ.Oid 199
-instance OidOf 'PGjsonb where oidOf = LibPQ.Oid 3802
-instance OidOf ('PGfixarray ns (null 'PGjsonb)) where oidOf = LibPQ.Oid 3807
-instance OidOf ('PGvararray (null 'PGjsonb)) where oidOf = LibPQ.Oid 3807
-instance OidOf 'PGtsvector where oidOf = LibPQ.Oid 3614
-instance OidOf ('PGfixarray ns (null 'PGtsvector)) where oidOf = LibPQ.Oid 3643
-instance OidOf ('PGvararray (null 'PGtsvector)) where oidOf = LibPQ.Oid 3643
-instance OidOf 'PGtsquery where oidOf = LibPQ.Oid 3615
-instance OidOf ('PGfixarray ns (null 'PGtsquery)) where oidOf = LibPQ.Oid 3645
-instance OidOf ('PGvararray (null 'PGtsquery)) where oidOf = LibPQ.Oid 3645
-instance OidOf 'PGoid where oidOf = LibPQ.Oid 26
-instance OidOf ('PGfixarray ns (null 'PGoid)) where oidOf = LibPQ.Oid 1028
-instance OidOf ('PGvararray (null 'PGoid)) where oidOf = LibPQ.Oid 1028
-instance OidOf ('PGrange 'PGint4) where oidOf = LibPQ.Oid 3904
-instance OidOf ('PGfixarray ns (null ('PGrange 'PGint4))) where oidOf = LibPQ.Oid 3905
-instance OidOf ('PGvararray (null ('PGrange 'PGint4))) where oidOf = LibPQ.Oid 3905
-instance OidOf ('PGrange 'PGint8) where oidOf = LibPQ.Oid 3926
-instance OidOf ('PGfixarray ns (null ('PGrange 'PGint8))) where oidOf = LibPQ.Oid 3927
-instance OidOf ('PGvararray (null ('PGrange 'PGint8))) where oidOf = LibPQ.Oid 3927
-instance OidOf ('PGrange 'PGnumeric) where oidOf = LibPQ.Oid 3906
-instance OidOf ('PGfixarray ns (null ('PGrange 'PGnumeric))) where oidOf = LibPQ.Oid 3907
-instance OidOf ('PGvararray (null ('PGrange 'PGnumeric))) where oidOf = LibPQ.Oid 3907
-instance OidOf ('PGrange 'PGtimestamp) where oidOf = LibPQ.Oid 3908
-instance OidOf ('PGfixarray ns (null ('PGrange 'PGtimestamp))) where oidOf = LibPQ.Oid 3909
-instance OidOf ('PGvararray (null ('PGrange 'PGtimestamp))) where oidOf = LibPQ.Oid 3909
-instance OidOf ('PGrange 'PGtimestamptz) where oidOf = LibPQ.Oid 3910
-instance OidOf ('PGfixarray ns (null ('PGrange 'PGtimestamptz))) where oidOf = LibPQ.Oid 3911
-instance OidOf ('PGvararray (null ('PGrange 'PGtimestamptz))) where oidOf = LibPQ.Oid 3911
-instance OidOf ('PGrange 'PGdate) where oidOf = LibPQ.Oid 3912
-instance OidOf ('PGfixarray ns (null ('PGrange 'PGdate))) where oidOf = LibPQ.Oid 3913
-instance OidOf ('PGvararray (null ('PGrange 'PGdate))) where oidOf = LibPQ.Oid 3913
-instance {-# OVERLAPPABLE #-} OidOf ('PGrange ty) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGfixarray ns (null ('PGrange ty))) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGvararray (null ('PGrange ty))) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGcomposite row) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGfixarray ns (null ('PGcomposite row))) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGvararray (null ('PGcomposite row))) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGenum labels) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGfixarray ns (null ('PGenum labels))) where oidOf = LibPQ.invalidOid
-instance {-# OVERLAPPABLE #-} OidOf ('PGvararray (null ('PGenum labels))) where oidOf = LibPQ.invalidOid
+class OidOf (db :: SchemasType) (ty :: PGType) where oidOf :: LibPQ.Oid
+class OidOfArray db ty where oidOfArray :: LibPQ.Oid
+instance OidOfArray db ty => OidOf db ('PGfixarray ns (null ty)) where
+  oidOf = oidOfArray @db @ty
+instance OidOfArray db ty => OidOf db ('PGvararray (null ty)) where
+  oidOf = oidOfArray @db @ty
+instance OidOf db 'PGbool where oidOf = LibPQ.Oid 16
+instance OidOfArray db 'PGbool where oidOfArray = LibPQ.Oid 1000
+instance OidOf db 'PGint2 where oidOf = LibPQ.Oid 21
+instance OidOfArray db 'PGint2 where oidOfArray = LibPQ.Oid 1005
+instance OidOf db 'PGint4 where oidOf = LibPQ.Oid 23
+instance OidOfArray db 'PGint4 where oidOfArray = LibPQ.Oid 1007
+instance OidOf db 'PGint8 where oidOf = LibPQ.Oid 20
+instance OidOfArray db 'PGint8 where oidOfArray = LibPQ.Oid 1016
+instance OidOf db 'PGnumeric where oidOf = LibPQ.Oid 1700
+instance OidOfArray db 'PGnumeric where oidOfArray = LibPQ.Oid 1231
+instance OidOf db 'PGfloat4 where oidOf = LibPQ.Oid 700
+instance OidOfArray db 'PGfloat4 where oidOfArray = LibPQ.Oid 1021
+instance OidOf db 'PGfloat8 where oidOf = LibPQ.Oid 701
+instance OidOfArray db 'PGfloat8 where oidOfArray = LibPQ.Oid 1022
+instance OidOf db 'PGmoney where oidOf = LibPQ.Oid 790
+instance OidOfArray db 'PGmoney where oidOfArray = LibPQ.Oid 791
+instance OidOf db ('PGchar n) where oidOf = LibPQ.Oid 18
+instance OidOfArray db ('PGchar n) where oidOfArray = LibPQ.Oid 1002
+instance OidOf db ('PGvarchar n) where oidOf = LibPQ.Oid 1043
+instance OidOfArray db ('PGvarchar n) where oidOfArray = LibPQ.Oid 1015
+instance OidOf db 'PGtext where oidOf = LibPQ.Oid 25
+instance OidOfArray db 'PGtext where oidOfArray = LibPQ.Oid 1009
+instance OidOf db 'PGbytea where oidOf = LibPQ.Oid 17
+instance OidOfArray db 'PGbytea where oidOfArray = LibPQ.Oid 1001
+instance OidOf db 'PGtimestamp where oidOf = LibPQ.Oid 1114
+instance OidOfArray db 'PGtimestamp where oidOfArray = LibPQ.Oid 1115
+instance OidOf db 'PGtimestamptz where oidOf = LibPQ.Oid 1184
+instance OidOfArray db 'PGtimestamptz where oidOfArray = LibPQ.Oid 1185
+instance OidOf db 'PGdate where oidOf = LibPQ.Oid 1082
+instance OidOfArray db 'PGdate where oidOfArray = LibPQ.Oid 1182
+instance OidOf db 'PGtime where oidOf = LibPQ.Oid 1083
+instance OidOfArray db 'PGtime where oidOfArray = LibPQ.Oid 1183
+instance OidOf db 'PGtimetz where oidOf = LibPQ.Oid 1266
+instance OidOfArray db 'PGtimetz where oidOfArray = LibPQ.Oid 1270
+instance OidOf db 'PGinterval where oidOf = LibPQ.Oid 1186
+instance OidOfArray db 'PGinterval where oidOfArray = LibPQ.Oid 1187
+instance OidOf db 'PGuuid where oidOf = LibPQ.Oid 2950
+instance OidOfArray db 'PGuuid where oidOfArray = LibPQ.Oid 2951
+instance OidOf db 'PGinet where oidOf = LibPQ.Oid 869
+instance OidOfArray db 'PGinet where oidOfArray = LibPQ.Oid 1041
+instance OidOf db 'PGjson where oidOf = LibPQ.Oid 114
+instance OidOfArray db 'PGjson where oidOfArray = LibPQ.Oid 199
+instance OidOf db 'PGjsonb where oidOf = LibPQ.Oid 3802
+instance OidOfArray db 'PGjsonb where oidOfArray = LibPQ.Oid 3807
+instance OidOf db 'PGtsvector where oidOf = LibPQ.Oid 3614
+instance OidOfArray db 'PGtsvector where oidOfArray = LibPQ.Oid 3643
+instance OidOf db 'PGtsquery where oidOf = LibPQ.Oid 3615
+instance OidOfArray db 'PGtsquery where oidOfArray = LibPQ.Oid 3645
+instance OidOf db 'PGoid where oidOf = LibPQ.Oid 26
+instance OidOfArray db 'PGoid where oidOfArray = LibPQ.Oid 1028
+instance OidOf db ('PGrange 'PGint4) where oidOf = LibPQ.Oid 3904
+instance OidOfArray db ('PGrange 'PGint4) where oidOfArray = LibPQ.Oid 3905
+instance OidOf db ('PGrange 'PGint8) where oidOf = LibPQ.Oid 3926
+instance OidOfArray db ('PGrange 'PGint8) where oidOfArray = LibPQ.Oid 3927
+instance OidOf db ('PGrange 'PGnumeric) where oidOf = LibPQ.Oid 3906
+instance OidOfArray db ('PGrange 'PGnumeric) where oidOfArray = LibPQ.Oid 3907
+instance OidOf db ('PGrange 'PGtimestamp) where oidOf = LibPQ.Oid 3908
+instance OidOfArray db ('PGrange 'PGtimestamp) where oidOfArray = LibPQ.Oid 3909
+instance OidOf db ('PGrange 'PGtimestamptz) where oidOf = LibPQ.Oid 3910
+instance OidOfArray db ('PGrange 'PGtimestamptz) where oidOfArray = LibPQ.Oid 3911
+instance OidOf db ('PGrange 'PGdate) where oidOf = LibPQ.Oid 3912
+instance OidOfArray db ('PGrange 'PGdate) where oidOfArray = LibPQ.Oid 3913
+-- instance {-# OVERLAPPABLE #-} OidOf ('PGrange ty) where oidOf = LibPQ.invalidOid
+-- instance {-# OVERLAPPABLE #-} OidOfArray ('PGrange ty) where oidOfArray = LibPQ.invalidOid
+-- instance {-# OVERLAPPABLE #-} OidOf ('PGcomposite row) where oidOf = LibPQ.invalidOid
+-- instance {-# OVERLAPPABLE #-} OidOfArray ('PGcomposite row) where oidOfArray = LibPQ.invalidOid
+-- instance {-# OVERLAPPABLE #-} OidOf ('PGenum labels) where oidOf = LibPQ.invalidOid
+-- instance {-# OVERLAPPABLE #-} OidOfArray ('PGenum labels) where oidOfArray = LibPQ.invalidOid
 
 -- | Lifts a `OidOf` constraint to a param.
-class OidOfParam (ty :: NullityType) where oidOfParam :: Oid
-instance OidOf ty => OidOfParam (null ty) where oidOfParam = oidOf @ty
+class OidOfParam db (ty :: NullityType) where oidOfParam :: Oid
+instance OidOf db ty => OidOfParam db (null ty) where oidOfParam = oidOf @db @ty
 
 -- | Lifts a `OidOf` constraint to a field.
-class OidOfField (field :: (Symbol, NullityType)) where
+class OidOfField db (field :: (Symbol, NullityType)) where
   oidOfField :: Oid
-instance OidOf ty => OidOfField (alias ::: null ty) where
-  oidOfField = oidOf @ty
+instance OidOf db ty => OidOfField db (alias ::: null ty) where
+  oidOfField = oidOf @db @ty
 
 -- | A `ToNullityParam` constraint gives an encoding of a Haskell `Type` into
 -- into the binary format of a PostgreSQL `NullityType`.
 -- You should not define instances for `ToNullityParam`,
 -- just use the provided instances.
-class ToNullityParam (x :: Type) (ty :: NullityType) where
+class ToNullityParam db (x :: Type) (ty :: NullityType) where
   toNullityParam :: x -> K (Maybe Encoding.Encoding) ty
-instance ToParam x pg => ToNullityParam x ('NotNull pg) where
-  toNullityParam = K . Just . unK . toParam @x @pg
-instance ToParam x pg => ToNullityParam (Maybe x) ('Null pg) where
-  toNullityParam = K . fmap (unK . toParam @x @pg)
+instance ToParam db x pg => ToNullityParam db x ('NotNull pg) where
+  toNullityParam = K . Just . unK . toParam @db @x @pg
+instance ToParam db x pg => ToNullityParam db (Maybe x) ('Null pg) where
+  toNullityParam = K . fmap (unK . toParam @db @x @pg)
 
 -- | A `ToField` constraint lifts the `ToParam` parser
 -- to an encoding of a @(Symbol, Type)@ to a @(Symbol, NullityType)@,
 -- encoding `Null`s to `Maybe`s. You should not define instances for
 -- `ToField`, just use the provided instances.
-class ToField (x :: (Symbol, Type)) (field :: (Symbol, NullityType)) where
+class ToField db (x :: (Symbol, Type)) (field :: (Symbol, NullityType)) where
   toField :: P x -> K (Maybe Encoding.Encoding) field
-instance ToNullityParam x ty => ToField (alias ::: x) (alias ::: ty) where
-  toField (P x) = K . unK $ toNullityParam @x @ty x
+instance ToNullityParam db x ty => ToField db (alias ::: x) (alias ::: ty) where
+  toField (P x) = K . unK $ toNullityParam @db @x @ty x
 
 -- | A `ToFixArray` constraint gives an encoding of a Haskell `Type`
 -- into the binary format of a PostgreSQL fixed-length array.
 -- You should not define instances for
 -- `ToFixArray`, just use the provided instances.
-class ToFixArray (x :: Type) (dims :: [Nat]) (array :: NullityType) where
+class ToFixArray db (x :: Type) (dims :: [Nat]) (array :: NullityType) where
   toFixArray :: x -> K (K Encoding.Array dims) array
-instance ToNullityParam x ty => ToFixArray x '[] ty where
+instance ToNullityParam db x ty => ToFixArray db x '[] ty where
   toFixArray = K . K . maybe Encoding.nullArray Encoding.encodingArray . unK
-    . toNullityParam @x @ty
+    . toNullityParam @db @x @ty
 instance
-  ( IsProductType product xs
+  ( IsProductType tuple xs
   , Length xs ~ dim
   , All ((~) x) xs
-  , ToFixArray x dims ty )
-  => ToFixArray product (dim ': dims) ty where
+  , ToFixArray db x dims ty )
+  => ToFixArray db tuple (dim ': dims) ty where
     toFixArray = K . K . Encoding.dimensionArray foldlN
-      (unK . unK . toFixArray @x @dims @ty) . unZ . unSOP . from
+      (unK . unK . toFixArray @db @x @dims @ty) . unZ . unSOP . from
 
 -- | A `ToParams` constraint generically sequences the encodings of `Type`s
 -- of the fields of a tuple or record to a row of `NullityType`s. You should
 -- not define instances of `ToParams`. Instead define `SOP.Generic` instances
 -- which in turn provide `ToParams` instances.
-class SListI tys => ToParams (x :: Type) (tys :: [NullityType]) where
+class SListI tys => ToParams db (x :: Type) (tys :: [NullityType]) where
   -- | >>> type Params = '[ 'NotNull 'PGbool, 'Null 'PGint2]
   -- >>> toParams @(Bool, Maybe Int16) @'[ 'NotNull 'PGbool, 'Null 'PGint2] (False, Just 0)
   -- K (Just "\NUL") :* K (Just "\NUL\NUL") :* Nil
@@ -570,10 +541,10 @@ class SListI tys => ToParams (x :: Type) (tys :: [NullityType]) where
   -- >>> toParams @Tuple @Params (Tuple False (Just 0))
   -- K (Just "\NUL") :* K (Just "\NUL\NUL") :* Nil
   toParams :: x -> NP (K (Maybe Encoding.Encoding)) tys
-instance (SListI tys, IsProductType x xs, AllZip ToNullityParam xs tys)
-  => ToParams x tys where
+instance (SListI tys, IsProductType x xs, AllZip (ToNullityParam db) xs tys)
+  => ToParams db x tys where
       toParams
-        = htrans (Proxy @ToNullityParam) (toNullityParam . unI)
+        = htrans (Proxy @(ToNullityParam db)) (toNullityParam @db . unI)
         . unZ . unSOP . from
 
 -- | A `FromValue` constraint gives a parser from the binary format of

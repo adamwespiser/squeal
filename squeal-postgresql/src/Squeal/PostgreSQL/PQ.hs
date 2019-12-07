@@ -349,13 +349,13 @@ a default instance.
 -}
 class Monad pq => MonadPQ db pq | pq -> db where
   manipulateParams
-    :: (ToParams x params, All OidOfParam params)
+    :: (ToParams db x params, All (OidOfParam db) params)
     => Manipulation '[] db params ys
     -- ^ `insertInto`, `update` or `deleteFrom`
     -> x -> pq (K LibPQ.Result ys)
   default manipulateParams
     :: (MonadTrans t, MonadPQ db pq1, pq ~ t pq1)
-    => (ToParams x params, All OidOfParam params)
+    => (ToParams db x params, All (OidOfParam db) params)
     => Manipulation '[] db params ys
     -- ^ `insertInto`, `update` or `deleteFrom`
     -> x -> pq (K LibPQ.Result ys)
@@ -363,7 +363,7 @@ class Monad pq => MonadPQ db pq | pq -> db where
     manipulateParams manipulation params
 
   manipulateParams_
-    :: (ToParams x params, All OidOfParam params)
+    :: (ToParams db x params, All (OidOfParam db) params)
     => Manipulation '[] db params '[]
     -- ^ `insertInto`, `update` or `deleteFrom`
     -> x -> pq ()
@@ -376,7 +376,7 @@ class Monad pq => MonadPQ db pq | pq -> db where
   manipulate_ = void . manipulate
 
   runQueryParams
-    :: (ToParams x params, All OidOfParam params)
+    :: (ToParams db x params, All (OidOfParam db) params)
     => Query '[] '[] db params ys
     -- ^ `select` and friends
     -> x -> pq (K LibPQ.Result ys)
@@ -389,19 +389,19 @@ class Monad pq => MonadPQ db pq | pq -> db where
   runQuery q = runQueryParams q ()
 
   traversePrepared
-    :: (ToParams x params, Traversable list, All OidOfParam params)
+    :: (ToParams db x params, Traversable list, All (OidOfParam db) params)
     => Manipulation '[] db params ys
     -- ^ `insertInto`, `update`, or `deleteFrom`, and friends
     -> list x -> pq (list (K LibPQ.Result ys))
   default traversePrepared
     :: (MonadTrans t, MonadPQ db pq1, pq ~ t pq1)
-    => (ToParams x params, Traversable list, All OidOfParam params)
+    => (ToParams db x params, Traversable list, All (OidOfParam db) params)
     => Manipulation '[] db params ys -> list x -> pq (list (K LibPQ.Result ys))
   traversePrepared manipulation params = lift $
     traversePrepared manipulation params
 
   forPrepared
-    :: (ToParams x params, Traversable list, All OidOfParam params)
+    :: (ToParams db x params, Traversable list, All (OidOfParam db) params)
     => list x
     -> Manipulation '[] db params ys
     -- ^ `insertInto`, `update` or `deleteFrom`
@@ -409,13 +409,13 @@ class Monad pq => MonadPQ db pq | pq -> db where
   forPrepared = flip traversePrepared
 
   traversePrepared_
-    :: (ToParams x params, Foldable list, All OidOfParam params)
+    :: (ToParams db x params, Foldable list, All (OidOfParam db) params)
     => Manipulation '[] db params '[]
     -- ^ `insertInto`, `update` or `deleteFrom`
     -> list x -> pq ()
   default traversePrepared_
     :: (MonadTrans t, MonadPQ db pq1, pq ~ t pq1)
-    => (ToParams x params, Foldable list, All OidOfParam params)
+    => (ToParams db x params, Foldable list, All (OidOfParam db) params)
     => Manipulation '[] db params '[]
     -- ^ `insertInto`, `update` or `deleteFrom`
     -> list x -> pq ()
@@ -423,7 +423,7 @@ class Monad pq => MonadPQ db pq | pq -> db where
     traversePrepared_ manipulation params
 
   forPrepared_
-    :: (ToParams x params, Foldable list, All OidOfParam params)
+    :: (ToParams db x params, Foldable list, All (OidOfParam db) params)
     => list x
     -> Manipulation '[] db params '[]
     -- ^ `insertInto`, `update` or `deleteFrom`
@@ -444,16 +444,16 @@ instance (MonadIO io, db0 ~ db, db1 ~ db)
       PQ $ \ (K conn) -> do
         let
           paramSet
-            :: forall param. OidOfParam param
+            :: forall param. OidOfParam db param
             => K (Maybe Encoding.Encoding) param
             -> K (Maybe (LibPQ.Oid, ByteString, LibPQ.Format)) param
           paramSet (K maybeEncoding) = K $
             maybeEncoding <&> \encoding ->
-              (oidOfParam @param, encodingBytes encoding, LibPQ.Binary)
+              (oidOfParam @db @param, encodingBytes encoding, LibPQ.Binary)
           params'
             = hcollapse
-            . hcmap (Proxy @OidOfParam) paramSet
-            $ toParams @x @ps params
+            . hcmap (Proxy @(OidOfParam db)) paramSet
+            $ toParams @db @x @ps params
           q' = q <> ";"
         resultMaybe <- liftIO $ LibPQ.execParams conn q' params' LibPQ.Binary
         case resultMaybe of
@@ -468,10 +468,10 @@ instance (MonadIO io, db0 ~ db, db1 ~ db)
       PQ $ \ (K conn) -> liftIO $ do
         let
           temp = "temporary_statement"
-          paramOid :: forall p. OidOfParam p => K LibPQ.Oid p
-          paramOid = K (oidOfParam @p)
+          paramOid :: forall p. OidOfParam db p => K LibPQ.Oid p
+          paramOid = K (oidOfParam @db @p)
           paramOids :: NP (K LibPQ.Oid) xs
-          paramOids = hcpure (Proxy @OidOfParam) paramOid
+          paramOids = hcpure (Proxy @(OidOfParam db)) paramOid
           paramOids' :: [LibPQ.Oid]
           paramOids' = hcollapse paramOids
         prepResultMaybe <- LibPQ.prepare conn temp q (Just paramOids')
@@ -482,7 +482,7 @@ instance (MonadIO io, db0 ~ db, db1 ~ db)
         results <- for list $ \ params -> do
           let
             toParam' encoding = (encodingBytes encoding, LibPQ.Binary)
-            params' = fmap (fmap toParam') (hcollapse (toParams @x @xs params))
+            params' = fmap (fmap toParam') (hcollapse (toParams @db @x @xs params))
           resultMaybe <- LibPQ.execPrepared conn temp params' LibPQ.Binary
           case resultMaybe of
             Nothing -> throw $ ResultException
@@ -502,10 +502,10 @@ instance (MonadIO io, db0 ~ db, db1 ~ db)
       PQ $ \ (K conn) -> liftIO $ do
         let
           temp = "temporary_statement"
-          paramOid :: forall p. OidOfParam p => K LibPQ.Oid p
-          paramOid = K (oidOfParam @p)
+          paramOid :: forall p. OidOfParam db p => K LibPQ.Oid p
+          paramOid = K (oidOfParam @db @p)
           paramOids :: NP (K LibPQ.Oid) xs
-          paramOids = hcpure (Proxy @OidOfParam) paramOid
+          paramOids = hcpure (Proxy @(OidOfParam db)) paramOid
           paramOids' :: [LibPQ.Oid]
           paramOids' = hcollapse paramOids
         prepResultMaybe <- LibPQ.prepare conn temp q (Just paramOids')
@@ -516,7 +516,7 @@ instance (MonadIO io, db0 ~ db, db1 ~ db)
         for_ list $ \ params -> do
           let
             toParam' encoding = (encodingBytes encoding, LibPQ.Binary)
-            params' = fmap (fmap toParam') (hcollapse (toParams @x @xs params))
+            params' = fmap (fmap toParam') (hcollapse (toParams @db @x @xs params))
           resultMaybe <- LibPQ.execPrepared conn temp params' LibPQ.Binary
           case resultMaybe of
             Nothing -> throw $ ResultException
