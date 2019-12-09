@@ -163,7 +163,7 @@ type expressions
 
 -- | `TypeExpression`s are used in `cast`s and
 -- `Squeal.PostgreSQL.Definition.createTable` commands.
-newtype TypeExpression (db :: SchemasType) (ty :: NullityType)
+newtype TypeExpression (db :: SchemasType) (ty :: NullType)
   = UnsafeTypeExpression { renderTypeExpression :: ByteString }
   deriving (GHC.Generic,Show,Eq,Ord,NFData)
 instance RenderSQL (TypeExpression db ty) where
@@ -373,7 +373,7 @@ instance PGTyped db ('PGrange 'PGtimestamptz) where pgtype = tstzrange
 instance PGTyped db ('PGrange 'PGdate) where pgtype = daterange
 
 -- | A class for null types with known `TypeExpression`s for a given database.
-class NullTyped db (ty :: NullityType) where
+class NullTyped db (ty :: NullType) where
   nulltype :: TypeExpression db ty
 instance PGTyped db ty => NullTyped db (null ty) where nulltype = pgtype @db @ty
 
@@ -447,7 +447,7 @@ instance NullTyped db ('NotNull ty)
   => ColumnTyped db ('NoDef :=> 'NotNull ty) where
     columntype = notNullable (nulltype @db @('NotNull ty))
 
--- | Allow you to specify PostGres types in relation to Haskell types.
+-- | Allow you to specify Postgresql types in relation to Haskell types.
 --
 -- >>> printSQL $ pgtypeFrom @String
 -- text
@@ -459,12 +459,12 @@ pgtypeFrom
   => TypeExpression db (null (PG hask))
 pgtypeFrom = pgtype
 
--- | Allow you to specify PostGres null types in relation to Haskell types.
+-- | Allow you to specify Postgresql null types in relation to Haskell types.
 --
 -- >>> printSQL $ nulltypeFrom @(Maybe String)
 -- text
 --
--- >>> printSQL $ columnFrom @Double
+-- >>> printSQL $ nulltypeFrom @Double
 -- float8
 nulltypeFrom
   :: forall hask db. NullTyped db (NullPG hask)

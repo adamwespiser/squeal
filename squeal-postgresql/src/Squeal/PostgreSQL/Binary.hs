@@ -121,6 +121,18 @@ let
     createTypeCompositeFrom @Person #person
 :}
 
+We must let Squeal know how to infer the types we've created.
+
+>>> :set -XMultiParamTypeClasses -XFlexibleInstances -XScopedTypeVariables
+>>> :{
+instance (db ~ Public Schema)
+  => OidOf db ('PGenum '["Beef", "Lamb", "Chicken"]) where
+    oidOf = oidOfUserType @db #schwarma
+instance (db ~ Public Schema)
+  => OidOf db ('PGcomposite '["name" ::: 'NotNull 'PGtext, "age" ::: 'NotNull 'PGint4]) where
+    oidOf = oidOfUserType @db #person
+:}
+
 Let's demonstrate how to associate our Haskell types @Schwarma@ and @Person@
 with enumerated, composite or json types in Postgres. First create a Haskell
 @Row@ type using the `Enumerated`, `Composite` and `Json` newtypes as fields.
@@ -206,7 +218,7 @@ module Squeal.PostgreSQL.Binary
   ( -- * Encoding
     ToParam (..)
   , ToParams (..)
-  , ToNullityParam (..)
+  , ToNullParam (..)
   , ToField (..)
   , ToFixArray (..)
     -- * Decoding
@@ -220,6 +232,9 @@ module Squeal.PostgreSQL.Binary
   , OidOf (..)
   , OidOfParam (..)
   , OidOfField (..)
+    -- * UserType
+  -- , UserType (..)
+  , oidOfUserType
   ) where
 
 import BinaryParser
@@ -253,6 +268,7 @@ import qualified PostgreSQL.Binary.Decoding as Decoding
 import qualified PostgreSQL.Binary.Encoding as Encoding
 
 import Squeal.PostgreSQL.Alias
+-- import Squeal.PostgreSQL.Expression.Type
 import Squeal.PostgreSQL.List
 import Squeal.PostgreSQL.PG
 import Squeal.PostgreSQL.Schema
@@ -261,19 +277,19 @@ import Squeal.PostgreSQL.Schema
 -- into the binary format of a PostgreSQL `PGType`.
 class ToParam (db :: SchemasType) (x :: Type) (pg :: PGType) where
   -- | >>> :set -XTypeApplications -XDataKinds
-  -- >>> toParam @Bool @'PGbool False
+  -- >>> toParam @'[] @Bool @'PGbool False
   -- K "\NUL"
   --
-  -- >>> toParam @Int16 @'PGint2 0
+  -- >>> toParam @'[] @Int16 @'PGint2 0
   -- K "\NUL\NUL"
   --
-  -- >>> toParam @Int32 @'PGint4 0
+  -- >>> toParam @'[] @Int32 @'PGint4 0
   -- K "\NUL\NUL\NUL\NUL"
   --
-  -- >>> :set -XMultiParamTypeClasses
+  -- >>> :set -XMultiParamTypeClasses -XFlexibleInstances
   -- >>> newtype Id = Id { getId :: Int16 } deriving Show
-  -- >>> instance ToParam Id 'PGint2 where toParam = toParam . getId
-  -- >>> toParam @Id @'PGint2 (Id 1)
+  -- >>> instance ToParam db Id 'PGint2 where toParam = toParam . getId
+  -- >>> toParam @'[] @Id @'PGint2 (Id 1)
   -- K "\NUL\SOH"
   toParam :: x -> K Encoding.Encoding pg
 instance ToParam db Bool 'PGbool where toParam = K . Encoding.bool
@@ -313,11 +329,11 @@ instance Aeson.ToJSON x => ToParam db (Json x) 'PGjson where
 instance Aeson.ToJSON x => ToParam db (Jsonb x) 'PGjsonb where
   toParam = K . Encoding.jsonb_bytes
     . Lazy.ByteString.toStrict . Aeson.encode . getJsonb
-instance (ToNullityParam db x ty, ty ~ nullity pg, OidOf db pg)
+instance (ToNullParam db x ty, ty ~ nullity pg, OidOf db pg)
   => ToParam db (VarArray [x]) ('PGvararray ty) where
     toParam = K
       . Encoding.array_foldable
-        (getOid (oidOf @db @pg)) (unK . toNullityParam @db @x @ty)
+        (getOid (oidOf @db @pg)) (unK . toNullParam @db @x @ty)
       . getVarArray
 instance (ToParam db x pg, OidOf db pg)
   => ToParam db (VarArray (Vector x)) ('PGvararray ('NotNull pg)) where
@@ -401,14 +417,12 @@ instance
 -- | The object identifier of a `PGType`.
 --
 -- >>> :set -XTypeApplications
--- >>> oidOf @'PGbool
+-- >>> oidOf @'[] @'PGbool
 -- Oid 16
 class OidOf (db :: SchemasType) (ty :: PGType) where oidOf :: LibPQ.Oid
 class OidOfArray db ty where oidOfArray :: LibPQ.Oid
-instance OidOfArray db ty => OidOf db ('PGfixarray ns (null ty)) where
-  oidOf = oidOfArray @db @ty
-instance OidOfArray db ty => OidOf db ('PGvararray (null ty)) where
-  oidOf = oidOfArray @db @ty
+instance OidOfArray db ty => OidOf db ('PGfixarray ns (null ty)) where oidOf = oidOfArray @db @ty
+instance OidOfArray db ty => OidOf db ('PGvararray (null ty)) where oidOf = oidOfArray @db @ty
 instance OidOf db 'PGbool where oidOf = LibPQ.Oid 16
 instance OidOfArray db 'PGbool where oidOfArray = LibPQ.Oid 1000
 instance OidOf db 'PGint2 where oidOf = LibPQ.Oid 21
@@ -471,52 +485,53 @@ instance OidOf db ('PGrange 'PGtimestamptz) where oidOf = LibPQ.Oid 3910
 instance OidOfArray db ('PGrange 'PGtimestamptz) where oidOfArray = LibPQ.Oid 3911
 instance OidOf db ('PGrange 'PGdate) where oidOf = LibPQ.Oid 3912
 instance OidOfArray db ('PGrange 'PGdate) where oidOfArray = LibPQ.Oid 3913
--- instance {-# OVERLAPPABLE #-} OidOf ('PGrange ty) where oidOf = LibPQ.invalidOid
--- instance {-# OVERLAPPABLE #-} OidOfArray ('PGrange ty) where oidOfArray = LibPQ.invalidOid
--- instance {-# OVERLAPPABLE #-} OidOf ('PGcomposite row) where oidOf = LibPQ.invalidOid
--- instance {-# OVERLAPPABLE #-} OidOfArray ('PGcomposite row) where oidOfArray = LibPQ.invalidOid
--- instance {-# OVERLAPPABLE #-} OidOf ('PGenum labels) where oidOf = LibPQ.invalidOid
--- instance {-# OVERLAPPABLE #-} OidOfArray ('PGenum labels) where oidOfArray = LibPQ.invalidOid
+
+oidOfUserType
+  :: forall db sch schema ty pg
+   . (Has sch db schema, Has ty schema ('Typedef pg))
+  => QualifiedAlias sch ty
+  -> LibPQ.Oid
+oidOfUserType _ = LibPQ.invalidOid
 
 -- | Lifts a `OidOf` constraint to a param.
-class OidOfParam db (ty :: NullityType) where oidOfParam :: Oid
+class OidOfParam db (ty :: NullType) where oidOfParam :: Oid
 instance OidOf db ty => OidOfParam db (null ty) where oidOfParam = oidOf @db @ty
 
 -- | Lifts a `OidOf` constraint to a field.
-class OidOfField db (field :: (Symbol, NullityType)) where
+class OidOfField db (field :: (Symbol, NullType)) where
   oidOfField :: Oid
 instance OidOf db ty => OidOfField db (alias ::: null ty) where
   oidOfField = oidOf @db @ty
 
--- | A `ToNullityParam` constraint gives an encoding of a Haskell `Type` into
--- into the binary format of a PostgreSQL `NullityType`.
--- You should not define instances for `ToNullityParam`,
+-- | A `ToNullParam` constraint gives an encoding of a Haskell `Type` into
+-- into the binary format of a PostgreSQL `NullType`.
+-- You should not define instances for `ToNullParam`,
 -- just use the provided instances.
-class ToNullityParam db (x :: Type) (ty :: NullityType) where
-  toNullityParam :: x -> K (Maybe Encoding.Encoding) ty
-instance ToParam db x pg => ToNullityParam db x ('NotNull pg) where
-  toNullityParam = K . Just . unK . toParam @db @x @pg
-instance ToParam db x pg => ToNullityParam db (Maybe x) ('Null pg) where
-  toNullityParam = K . fmap (unK . toParam @db @x @pg)
+class ToNullParam db (x :: Type) (ty :: NullType) where
+  toNullParam :: x -> K (Maybe Encoding.Encoding) ty
+instance ToParam db x pg => ToNullParam db x ('NotNull pg) where
+  toNullParam = K . Just . unK . toParam @db @x @pg
+instance ToParam db x pg => ToNullParam db (Maybe x) ('Null pg) where
+  toNullParam = K . fmap (unK . toParam @db @x @pg)
 
 -- | A `ToField` constraint lifts the `ToParam` parser
--- to an encoding of a @(Symbol, Type)@ to a @(Symbol, NullityType)@,
+-- to an encoding of a @(Symbol, Type)@ to a @(Symbol, NullType)@,
 -- encoding `Null`s to `Maybe`s. You should not define instances for
 -- `ToField`, just use the provided instances.
-class ToField db (x :: (Symbol, Type)) (field :: (Symbol, NullityType)) where
+class ToField db (x :: (Symbol, Type)) (field :: (Symbol, NullType)) where
   toField :: P x -> K (Maybe Encoding.Encoding) field
-instance ToNullityParam db x ty => ToField db (alias ::: x) (alias ::: ty) where
-  toField (P x) = K . unK $ toNullityParam @db @x @ty x
+instance ToNullParam db x ty => ToField db (alias ::: x) (alias ::: ty) where
+  toField (P x) = K . unK $ toNullParam @db @x @ty x
 
 -- | A `ToFixArray` constraint gives an encoding of a Haskell `Type`
 -- into the binary format of a PostgreSQL fixed-length array.
 -- You should not define instances for
 -- `ToFixArray`, just use the provided instances.
-class ToFixArray db (x :: Type) (dims :: [Nat]) (array :: NullityType) where
+class ToFixArray db (x :: Type) (dims :: [Nat]) (array :: NullType) where
   toFixArray :: x -> K (K Encoding.Array dims) array
-instance ToNullityParam db x ty => ToFixArray db x '[] ty where
+instance ToNullParam db x ty => ToFixArray db x '[] ty where
   toFixArray = K . K . maybe Encoding.nullArray Encoding.encodingArray . unK
-    . toNullityParam @db @x @ty
+    . toNullParam @db @x @ty
 instance
   ( IsProductType tuple xs
   , Length xs ~ dim
@@ -527,24 +542,26 @@ instance
       (unK . unK . toFixArray @db @x @dims @ty) . unZ . unSOP . from
 
 -- | A `ToParams` constraint generically sequences the encodings of `Type`s
--- of the fields of a tuple or record to a row of `NullityType`s. You should
+-- of the fields of a tuple or record to a row of `NullType`s. You should
 -- not define instances of `ToParams`. Instead define `SOP.Generic` instances
 -- which in turn provide `ToParams` instances.
-class SListI tys => ToParams db (x :: Type) (tys :: [NullityType]) where
-  -- | >>> type Params = '[ 'NotNull 'PGbool, 'Null 'PGint2]
-  -- >>> toParams @(Bool, Maybe Int16) @'[ 'NotNull 'PGbool, 'Null 'PGint2] (False, Just 0)
+class SListI tys => ToParams db (x :: Type) (tys :: [NullType]) where
+  -- |
+  -- >>> type Params = '[ 'NotNull 'PGbool, 'Null 'PGint2]
+  -- >>> type DB = Public '[]
+  -- >>> toParams @DB @(Bool, Maybe Int16) @Params (False, Just 0)
   -- K (Just "\NUL") :* K (Just "\NUL\NUL") :* Nil
   --
   -- >>> :set -XDeriveGeneric
   -- >>> data Tuple = Tuple { p1 :: Bool, p2 :: Maybe Int16} deriving GHC.Generic
   -- >>> instance Generic Tuple
-  -- >>> toParams @Tuple @Params (Tuple False (Just 0))
+  -- >>> toParams @DB @Tuple @Params (Tuple False (Just 0))
   -- K (Just "\NUL") :* K (Just "\NUL\NUL") :* Nil
   toParams :: x -> NP (K (Maybe Encoding.Encoding)) tys
-instance (SListI tys, IsProductType x xs, AllZip (ToNullityParam db) xs tys)
+instance (SListI tys, IsProductType x xs, AllZip (ToNullParam db) xs tys)
   => ToParams db x tys where
       toParams
-        = htrans (Proxy @(ToNullityParam db)) (toNullityParam @db . unI)
+        = htrans (Proxy @(ToNullParam db)) (toNullParam @db . unI)
         . unZ . unSOP . from
 
 -- | A `FromValue` constraint gives a parser from the binary format of
@@ -676,10 +693,10 @@ instance
         fmap Composite (Decoding.fn (fromRow @fields <=< composite))
 
 -- | A `FromField` constraint lifts the `FromValue` parser
--- to a decoding of a @(Symbol, NullityType)@ to a @(Symbol, Type)@ ,
+-- to a decoding of a @(Symbol, NullType)@ to a @(Symbol, Type)@ ,
 -- decoding `Null`s to `Maybe`s. You should not define instances for
 -- `FromField`, just use the provided instances.
-class FromField (pg :: (Symbol, NullityType)) (y :: (Symbol, Type)) where
+class FromField (pg :: (Symbol, NullType)) (y :: (Symbol, Type)) where
   fromField
     :: K (Maybe Strict.ByteString) pg
     -> (Either Strict.Text :.: P) y
@@ -700,7 +717,7 @@ instance FromValue pg y
 -- from the binary format of a PostgreSQL fixed-length array.
 -- You should not define instances for
 -- `FromFixArray`, just use the provided instances.
-class FromFixArray (dims :: [Nat]) (ty :: NullityType) (y :: Type) where
+class FromFixArray (dims :: [Nat]) (ty :: NullType) (y :: Type) where
   fromFixArray :: Decoding.Array y
 instance FromValue pg y => FromFixArray '[] ('NotNull pg) y where
   fromFixArray = Decoding.valueArray (fromValue @pg @y)
@@ -796,7 +813,7 @@ instance
 -- `toParams` or decoding a single value with `fromRow`.
 --
 -- >>> import Data.Text
--- >>> toParams @(Only (Maybe Text)) @'[ 'Null 'PGtext] (Only (Just "foo"))
+-- >>> toParams @(Public '[]) @(Only (Maybe Text)) @'[ 'Null 'PGtext] (Only (Just "foo"))
 -- K (Just "foo") :* Nil
 --
 -- >>> fromRow @'["fromOnly" ::: 'Null 'PGtext] @(Only (Maybe Text)) (K (Just "bar") :* Nil)
@@ -820,4 +837,17 @@ replicateMN mx = hsequence' $
   hcpure (Proxy :: Proxy ((~) x)) (Comp (I <$> mx))
 
 getOid :: LibPQ.Oid -> Word32
-getOid (LibPQ.Oid (CUInt oid)) = oid
+getOid (LibPQ.Oid (CUInt o)) = o
+
+-- data UserType db hask where
+--   UserType
+--     :: (Has sch db schema, Has ty schema ('Typedef (PG hask)))
+--     => QualifiedAlias sch ty
+--     -> UserType db hask
+
+-- class UserTyped db hask where
+--   usertype :: UserType db hask
+
+-- instance UserTyped db pg => PGTyped db pg where
+--   pgtype = case usertype @db @pg of
+--     UserType ty -> typedef ty
