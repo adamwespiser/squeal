@@ -50,7 +50,7 @@ at least one row is returned, not all the way to completion.
 exists
   :: Query (Join lat from) with db params row
   -- ^ subquery
-  -> Condition lat with grp db params from
+  -> Expression lat with grp db params from (null 'PGbool)
 exists query = UnsafeExpression $ "EXISTS" <+> parenthesized (renderSQL query)
 
 {- |
